@@ -1,0 +1,12 @@
+# Ignorar todo por defecto
+*
+
+# Excepto el script principal y este archivo
+!main.py
+!.gitignore
+!requirements.txt
+
+# Ignorar carpetas de entorno y caché (redundante por *, pero por claridad)
+venv/
+__pycache__/
+.gemini/
