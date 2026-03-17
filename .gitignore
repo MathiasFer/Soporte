@@ -5,6 +5,7 @@
 !main.py
 !.gitignore
 !requirements.txt
+!empresas.py
 
 # Ignorar carpetas de entorno y caché (redundante por *, pero por claridad)
 venv/
