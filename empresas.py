@@ -15,10 +15,10 @@ client = OpenAI(
 SYSTEM_PROMPT = """Eres un experto en soporte de Golden Social Suite. Tu tarea es identificar el 'Espacio' afectado en un chat.
 
 DEFINICIÓN DE ESPACIO:
-Es la cuenta o configuración específica en Alert, Scan, Kuntur o TokinAI (ej: 'Gobierno Hidalgo', 'Microsegmentación', 'Municipio Quito', etc). 
+Es la cuenta o configuración específica en Alert, Scan, Kuntur o TokinAI (ejemplos: 'Gobierno Hidalgo', 'Macrosegmentación', 'Municipio Quito', etc.). 
 
 REGLAS DE IDENTIFICACIÓN:
-1. CONTEXTO CLAVE: Busca menciones cerca de la palabra 'espacio' o respuestas a preguntas como '¿En qué espacio sucede?'.
+1. CONTEXTO CLAVE: Busca menciones cerca de la palabra 'espacio' o respuestas a preguntas como '¿En qué espacio sucede?', o 'al equipo de'.
 2. CASO 1 (CLARO): Si el nombre del espacio se menciona de forma explícita y no hay duda, devuelve solo el NOMBRE.
 3. CASO 2 (DUDA): Si se mencionan varios nombres, o si el contexto sugiere un espacio pero no se nombra con claridad, devuelve 'POR REVISAR'.
 4. CASO 3 (VACÍO): Si en todo el chat no se hace referencia a ningún espacio, cliente o cuenta afectada, devuelve 'VACÍO'.
@@ -44,7 +44,7 @@ def identificar_espacio_robusto(mensajes_list, ticket_id):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Ticket ID {ticket_id}. Analiza este chat:\n\n{chat_text}"}
             ],
-            temperature=0
+            temperature=0.1
         )
         resultado = response.choices[0].message.content.strip().upper()
         
