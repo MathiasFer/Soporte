@@ -7,6 +7,7 @@ from datetime import datetime
 # PARSEAR FECHA DEL HTML
 # ---------------------------
 def parse_html_datetime(date_str, time_str):
+    # Asegúrate de que el formato coincida (ej: "14 July 2025 17:54")
     full_str = f"{date_str} {time_str}"
     return datetime.strptime(full_str, "%d %B %Y %H:%M")
 
@@ -20,7 +21,7 @@ def extract_messages(html_path):
 
     messages = []
     current_date = ""
-    last_user = "Sistema/Desconocido" # Guardamos el último usuario detectado
+    last_user = "Sistema/Desconocido" 
 
     history = soup.find("div", class_="history")
 
@@ -28,32 +29,32 @@ def extract_messages(html_path):
         clases = div.get("class", [])
 
         if "service" in clases:
-            # Si el service tiene una fecha (ej: 24 January 2026) la guardamos
             text_service = div.get_text(strip=True)
-            # Intentamos ver si es una fecha (tiene longitud corta usualmente)
             if len(text_service) < 25: 
                 current_date = text_service
             continue
 
         if "default" in clases:
-            # 1. Intentar extraer nombre
+            # 1. Extracción de nombre con persistencia
             from_name_div = div.find("div", class_="from_name")
-            
             if from_name_div:
-                # Es un mensaje nuevo con nombre
                 user = from_name_div.get_text(strip=True)
-                last_user = user # Actualizamos el último usuario
+                last_user = user 
             else:
-                # Es un mensaje con clase 'joined', usamos el último nombre guardado
                 user = last_user
 
             # 2. Extraer Hora
             time_div = div.find("div", class_="date")
             time = time_div.get_text(strip=True) if time_div else ""
 
-            # 3. Extraer Contenido
+            # 3. Extraer Contenido y LIMPIAR espacios/saltos de línea (\n)
             text_div = div.find("div", class_="text")
-            content = text_div.get_text(" ", strip=True) if text_div else "[Multimedia]"
+            if text_div:
+                # Obtenemos el texto y usamos split/join para normalizar espacios
+                raw_text = text_div.get_text(" ", strip=True)
+                content = " ".join(raw_text.split())
+            else:
+                content = "[Multimedia]"
 
             try:
                 dt = parse_html_datetime(current_date, time)
@@ -66,17 +67,10 @@ def extract_messages(html_path):
                 })
             except:
                 continue
-    return messages
-
+    
     print("\n==============================")
     print("✅ TOTAL MENSAJES EXTRAIDOS:", len(messages))
     print("==============================\n")
-
-    if len(messages) > 0:
-        print("Primeros 5 mensajes parseados:")
-        for m in messages[:5]:
-            print(m["datetime"], "-", m["usuario"])
-
     return messages
 
 
@@ -84,16 +78,13 @@ def extract_messages(html_path):
 # CARGAR TICKETS EXCEL
 # ---------------------------
 def load_tickets(excel_path):
-
     df = pd.read_excel(excel_path)
 
     print("\n==============================")
     print("📊 DEBUG EXCEL")
     print("==============================")
 
-    print("\nPrimeras filas del Excel:")
-    print(df.head())
-
+    # Convertimos a datetime manejando errores para identificar Pendientes (NaT)
     df["Fecha de creación (Ticket)"] = pd.to_datetime(
         df["Fecha de creación (Ticket)"],
         dayfirst=True,
@@ -106,13 +97,6 @@ def load_tickets(excel_path):
         errors="coerce"
     )
 
-    print("\nFechas convertidas:")
-    print(df[[
-        "ID de Ticket",
-        "Fecha de creación (Ticket)",
-        "Fecha de Resolución"
-    ]].head())
-
     return df
 
 
@@ -120,64 +104,59 @@ def load_tickets(excel_path):
 # MATCH TICKETS Y MENSAJES
 # ---------------------------
 def build_ticket_documents(messages, tickets_df):
-
     documents = []
+    
+    # Ordenar por fecha para que la lógica de "siguiente ticket" funcione
+    tickets_df = tickets_df.sort_values(by="Fecha de creación (Ticket)").reset_index(drop=True)
 
     print("\n==============================")
-    print("🔗 DEBUG MATCH TICKETS")
+    print("🔗 MATCH TICKETS (MODO VECINDAD)")
     print("==============================")
 
-    for _, row in tickets_df.iterrows():
-
+    for i, row in tickets_df.iterrows():
         start = row["Fecha de creación (Ticket)"]
         end = row["Fecha de Resolución"]
+        ticket_id = row["ID de Ticket"]
 
-        print("\n--------------------------------")
-        print("🎫 Ticket:", row["ID de Ticket"])
-        print("Inicio:", start)
-        print("Fin:", end)
-
+        # Lógica para tickets sin resolución o etiquetas de texto
         if pd.isna(end):
-            end = datetime.now()
-            print("⚠️ Fecha resolución vacía → usando fecha actual")
+            # Si no hay fecha de resolución, el límite es el inicio del siguiente ticket
+            if i + 1 < len(tickets_df):
+                next_ticket_start = tickets_df.iloc[i + 1]["Fecha de creación (Ticket)"]
+                # Un segundo antes para no solapar
+                end = next_ticket_start - pd.Timedelta(seconds=1)
+                print(f"🎫 Ticket {ticket_id} (Pendiente) -> Limitado hasta: {end}")
+            else:
+                # Si es el último, usamos la hora actual
+                end = datetime.now()
+                print(f"🎫 Ticket {ticket_id} (Último Pendiente) -> Usando fecha actual")
 
+        # Filtrar mensajes
         mensajes_ticket = []
-        count = 0
-
         for m in messages:
-
-            if start <= m["datetime"] <= end:
+            # Colchón de 1 min al inicio por si el reporte fue segundos después del mensaje
+            if (start - pd.Timedelta(minutes=1)) <= m["datetime"] <= end:
                 mensajes_ticket.append({
                     "fecha": m["fecha"],
                     "hora": m["hora"],
                     "usuario": m["usuario"],
                     "contenido": m["contenido"]
                 })
-                count += 1
-
-        print("📩 Mensajes encontrados:", count)
-
-        if count == 0:
-            print("⚠️ No hubo match. Primeros mensajes disponibles:")
-            for m in messages[:5]:
-                print("   →", m["datetime"])
 
         doc = {
-            "ticket_id": row["ID de Ticket"],
-            "categoria": row["Categoría (Ticket)"],
-            "subcategoria": row["Subcategoría"],
-            "producto": row["Nombre del Producto"],
-            "prioridad": row["Prioridad"],
-            "estado": row["Estado (Ticket)"],
+            "ticket_id": int(ticket_id) if not pd.isna(ticket_id) else None,
+            "categoria": row.get("Categoría (Ticket)", "N/A"),
+            "subcategoria": row.get("Subcategoría", "N/A"),
+            "producto": row.get("Nombre del Producto", "N/A"),
+            "prioridad": row.get("Prioridad", "N/A"),
+            "estado": row.get("Estado (Ticket)", "N/A"),
             "creado": str(start),
-            "resuelto": str(end),
+            "resuelto": str(row["Fecha de Resolución"]) if not pd.isna(row["Fecha de Resolución"]) else "Pendiente",
             "mensajes": mensajes_ticket
         }
-
         documents.append(doc)
 
     return documents
-
 
 # ---------------------------
 # EJECUCIÓN PRINCIPAL
@@ -188,21 +167,24 @@ excel_file = "tickets.xlsx"
 
 print("\n🚀 INICIANDO PROCESO\n")
 
+# 1. Extraer y limpiar mensajes
 messages = extract_messages(html_file)
 
+# 2. Cargar tickets
 tickets_df = load_tickets(excel_file)
 
+# 3. Vincular con lógica de vecindad
 ticket_docs = build_ticket_documents(messages, tickets_df)
 
 print("\n==============================")
 print("📦 RESUMEN FINAL")
 print("==============================")
-
 print("Total mensajes HTML:", len(messages))
 print("Total tickets Excel:", len(tickets_df))
 
 # Guardar JSON
-with open("tickets_con_mensajes.json", "w", encoding="utf-8") as f:
+output_file = "tickets_con_mensajes.json"
+with open(output_file, "w", encoding="utf-8") as f:
     json.dump(ticket_docs, f, indent=2, ensure_ascii=False)
 
-print("\n✅ JSON generado: tickets_con_mensajes.json")
+print(f"\n✅ JSON generado exitosamente: {output_file}")
