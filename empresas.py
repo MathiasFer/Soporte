@@ -13,23 +13,24 @@ client = OpenAI(
 )
 
 SYSTEM_PROMPT = """Eres un experto en soporte de Golden Social Suite. Tu tarea es identificar el 'Espacio' afectado en un chat.
+    DEFINICIÓN DE ESPACIO:
+    Es el usuario, empresa o configuración específica en Alert, Scan, Kuntur o TokinAI (ejemplos: 'Gobierno Hidalgo', 'Macrosegmentación', 'Municipio Quito', etc.).
 
-DEFINICIÓN DE ESPACIO:
-Es la cuenta, usuario, empresa o configuración específica en Alert, Scan, Kuntur o TokinAI (ejemplos: 'Gobierno Hidalgo', 'Macrosegmentación', 'Municipio Quito', etc.). 
+    REGLAS DE IDENTIFICACIÓN:
+    1. CONTEXTO CLAVE: Busca menciones cerca de la palabra 'espacio', 'usuario', 'empresa' o respuestas a preguntas como '¿En qué espacio sucede?', 'al equipo de', 'a que usuario'.
+    2. CASOS A IGNORAR: No tomar en cuenta términos o personas cuando se refieran a objetos de consulta (ejemplo: "la consulta Noboa" o "el feed de Noboa" NO es un espacio). Ignorar redes sociales típicas (Youtube, Facebook, etc.).
+    3. CASO 1 (CLARO): Si el nombre del espacio se menciona de forma explícita como la cuenta afectada y no hay duda, devuelve solo el NOMBRE.
+    4. CASO 2 (DUDA): Si se mencionan varios nombres o el contexto es ambiguo, devuelve 'POR REVISAR'.
+    5. CASO 3 (VACÍO): Si no se hace referencia a ninguna cuenta cliente, devuelve 'VACÍO'.
 
-REGLAS DE IDENTIFICACIÓN:
-1. CONTEXTO CLAVE: Busca menciones cerca de la palabra 'espacio', 'usuario', 'empresa' o respuestas a preguntas como '¿En qué espacio sucede?', 'al equipo de', 'a que usuario'.
-2. CASOS A IGNORAR (CRÍTICO): 
-   - NO confundir el "Espacio" con el objeto analizado (ejemplo: si dicen "el posteo de Noboa" o "la búsqueda de Noboa", Noboa NO es el espacio, es solo el dato consultado). 
-   - No tomar en cuenta las consultas cuando se mencionen como fuente de datos.
-   - Ignorar redes sociales (Youtube, Facebook, Instagram, etc.) y sus feeds.
-3. CASO 1 (CLARO): Si el nombre del espacio se menciona de forma explícita como la CUENTA CLIENTE donde ocurre el error y no hay duda, devuelve solo el NOMBRE.
-4. CASO 2 (DUDA): Si se mencionan varios nombres, o si el contexto sugiere un espacio pero se menciona en tono de comparativa con otros datos sin quedar claro cuál es la cuenta afectada, devuelve 'POR REVISAR'.
-5. CASO 3 (VACÍO): Si en todo el chat no se hace referencia a ningún espacio, cliente o cuenta afectada, devuelve 'VACÍO'.
+    EJEMPLOS DE LOGICA:
+    - Chat: "No cargan las menciones en el espacio de Municipio Quito." -> Resultado: MUNICIPIO QUITO
+    - Chat: "El posteo de Noboa trae menos interacciones que el de ayer." -> Resultado: VACÍO (Noboa es el objeto consultado, no el espacio).
+    - Chat: "¿En qué usuario reportan el fallo? En el de la Prefectura." -> Resultado: PREFECTURA
 
-IMPORTANTE: No confundas al técnico de soporte con el espacio. El espacio es el lugar donde ocurre el error técnico (Tampoco confundir con las plataforma Kuntur, Alert, Scan o TokinAI).
+    IMPORTANTE: No confundas al técnico de soporte con el espacio. El espacio es el lugar donde ocurre el error técnico (Tampoco confundir con la plataforma Kuntur, Alert, Scan o TokinAI).
 
-Respuesta corta: Solo el nombre, 'POR REVISAR' o 'VACÍO'."""
+    Respuesta corta: Solo el nombre, 'POR REVISAR' o 'VACÍO'."""
 
 def identificar_espacio_robusto(mensajes_list, ticket_id):
     if not mensajes_list:
