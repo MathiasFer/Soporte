@@ -15,16 +15,21 @@ client = OpenAI(
 SYSTEM_PROMPT = """Eres un experto en soporte de Golden Social Suite. Tu tarea es identificar el 'Espacio' afectado en un chat.
 
 DEFINICIÓN DE ESPACIO:
-Es la cuenta o configuración específica en Alert, Scan, Kuntur o TokinAI (ejemplos: 'Gobierno Hidalgo', 'Macrosegmentación', 'Municipio Quito', etc.). 
+Es la cuenta, usuario, empresa o configuración específica en Alert, Scan, Kuntur o TokinAI (ejemplos: 'Gobierno Hidalgo', 'Macrosegmentación', 'Municipio Quito', etc.). 
 
 REGLAS DE IDENTIFICACIÓN:
-1. CONTEXTO CLAVE: Busca menciones cerca de la palabra 'espacio' o respuestas a preguntas como '¿En qué espacio sucede?', o 'al equipo de'.
-2. CASO 1 (CLARO): Si el nombre del espacio se menciona de forma explícita y no hay duda, devuelve solo el NOMBRE.
-3. CASO 2 (DUDA): Si se mencionan varios nombres, o si el contexto sugiere un espacio pero no se nombra con claridad, devuelve 'POR REVISAR'.
-4. CASO 3 (VACÍO): Si en todo el chat no se hace referencia a ningún espacio, cliente o cuenta afectada, devuelve 'VACÍO'.
+1. CONTEXTO CLAVE: Busca menciones cerca de la palabra 'espacio', 'usuario', 'empresa' o respuestas a preguntas como '¿En qué espacio sucede?', 'al equipo de', 'a que usuario'.
+2. CASOS A IGNORAR (CRÍTICO): 
+   - NO confundir el "Espacio" con el objeto analizado (ejemplo: si dicen "el posteo de Noboa" o "la búsqueda de Noboa", Noboa NO es el espacio, es solo el dato consultado). 
+   - No tomar en cuenta las consultas cuando se mencionen como fuente de datos.
+   - Ignorar redes sociales (Youtube, Facebook, Instagram, etc.) y sus feeds.
+3. CASO 1 (CLARO): Si el nombre del espacio se menciona de forma explícita como la CUENTA CLIENTE donde ocurre el error y no hay duda, devuelve solo el NOMBRE.
+4. CASO 2 (DUDA): Si se mencionan varios nombres, o si el contexto sugiere un espacio pero se menciona en tono de comparativa con otros datos sin quedar claro cuál es la cuenta afectada, devuelve 'POR REVISAR'.
+5. CASO 3 (VACÍO): Si en todo el chat no se hace referencia a ningún espacio, cliente o cuenta afectada, devuelve 'VACÍO'.
 
-IMPORTANTE: No confundas al técnico de soporte con el espacio. El espacio es el lugar donde ocurre el error técnico.
-Respuesta corta: Solo el nombre, 'Por revisar' o 'vacío'."""
+IMPORTANTE: No confundas al técnico de soporte con el espacio. El espacio es el lugar donde ocurre el error técnico (Tampoco confundir con las plataforma Kuntur, Alert, Scan o TokinAI).
+
+Respuesta corta: Solo el nombre, 'POR REVISAR' o 'VACÍO'."""
 
 def identificar_espacio_robusto(mensajes_list, ticket_id):
     if not mensajes_list:
@@ -44,7 +49,7 @@ def identificar_espacio_robusto(mensajes_list, ticket_id):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Ticket ID {ticket_id}. Analiza este chat:\n\n{chat_text}"}
             ],
-            temperature=0.1
+            temperature=0
         )
         resultado = response.choices[0].message.content.strip().upper()
         
@@ -94,22 +99,28 @@ def procesar_mapeo(json_path):
             "ID de Ticket": t_id,
             "Empresa": espacio_detectado
         })
-        
-        # Pequeño delay para no saturar la API
-        time.sleep(0.5)
 
-    # Exportar a Excel
-    df_mapeo = pd.DataFrame(resultados)
-    df_mapeo.to_excel("mapeo_espacios_ia.xlsx", index=False)
+        # --- GUARDADO INCREMENTAL ---
+        # Se guarda el progreso actual en cada iteración
+        pd.DataFrame(resultados).to_excel("mapeo_espacios_ia.xlsx", index=False)
+        
+        # --- LÓGICA DE ESPERA (Cada 30 peticiones) ---
+        if (i + 1) % 30 == 0 and (i + 1) < total:
+            print(f"\n⏳ Límite de 30 alcanzado. Esperando 60 segundos para evitar sobrecarga...")
+            time.sleep(60)
+            print("▶️ Reanudando proceso...\n")
+        else:
+            # Pequeño delay base entre peticiones normales
+            time.sleep(0.5)
 
     print("\n" + "="*50)
-    print("📊 RESUMEN DE PROCESAMIENTO")
+    print("📊 RESUMEN DE PROCESAMIENTO FINAL")
     print("="*50)
     print(f"✨ Espacios Claros:  {stats['detectados']}")
     print(f"❓ Por Revisar:      {stats['por_revisar']}")
     print(f"∅  No Mencionados:   {stats['vacios']}")
     print("-" * 50)
-    print("✅ Archivo generado: mapeo_espacios_ia.xlsx\n")
+    print("✅ Proceso completado. Archivo final actualizado: mapeo_espacios_ia.xlsx\n")
 
 if __name__ == "__main__":
     procesar_mapeo("tickets_con_mensajes.json")
